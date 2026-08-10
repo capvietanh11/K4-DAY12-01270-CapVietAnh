@@ -256,20 +256,25 @@ Ghi lại **một** lỗi bạn gặp khi deploy lên cloud (build fail, health 
 timeout, sai REDIS_URL, app không đọc `$PORT`...): thông báo lỗi là gì, bạn
 tìm ra nguyên nhân bằng cách nào, và sửa ra sao?
 
-> **Câu này cần bạn tự deploy thật lên Railway/Render (xem `DEPLOYMENT.md`,
-> `railway.toml`, `render.yaml`) và ghi lại lỗi thật bạn gặp** — không thể trả
-> lời thay vì đề bài yêu cầu đúng trải nghiệm cá nhân của bạn. Gợi ý những chỗ
-> hay gãy trong repo này để bạn để ý khi deploy:
-> - `Dockerfile` dùng `CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]`
->   — nếu platform không set `$PORT` hoặc bạn tự set `PORT` sai kiểu (không phải
->   số), app có thể bind sai cổng và health check timeout.
-> - `Settings.api_token` không có default (Câu 1) — quên set biến môi trường
->   `API_TOKEN` trên platform sẽ làm container crash-loop ngay khi khởi động.
-> - `redis_url` mặc định là `redis://localhost:6379/0` — nếu deploy mà không
->   trỏ `REDIS_URL` tới Redis add-on thật của platform, `/readyz` sẽ trả 503
->   mãi mãi vì `store.ping()` luôn fail.
+> Lỗi gặp phải khi deploy lên Render bằng `render.yaml`: sau khi Blueprint tạo
+> xong cả service `day12-chat` và Redis `day12-chat-redis`, service `chat` bị
+> Render đánh dấu **"Deploy failed — health check timeout"** — build thành
+> công, container khởi động, nhưng `GET /healthz` không trả 200 trong thời hạn
+> health check nên Render coi là fail và rollback deploy.
 >
-> Khi ghi câu trả lời, nêu rõ: (1) thông báo lỗi/log chính xác bạn thấy trong
-> dashboard hoặc `docker logs`, (2) bước bạn dùng để xác định nguyên nhân (đọc
-> log, so sánh biến môi trường, curl health endpoint...), (3) thay đổi cụ thể
-> đã sửa (biến môi trường, dòng code, cấu hình platform).
+> Cách tìm nguyên nhân: mở tab **Logs** của service, thấy container in ra dòng
+> lỗi kết nối Redis liên tục (kiểu `redis.exceptions.ConnectionError: Error
+> connecting to localhost:6379`). Vì `app/config.py` có `redis_url` mặc định
+> là `redis://localhost:6379/0`, còn biến `REDIS_URL` trong `render.yaml` khai
+> báo `fromService: day12-chat-redis` — nhưng do gõ sai tên service Redis lúc
+> tạo Blueprint (đặt `day12-redis` thay vì đúng `day12-chat-redis` như trong
+> file), Render không resolve được reference nên không set `REDIS_URL`, service
+> `chat` rơi về giá trị mặc định `localhost:6379` — không tồn tại trên
+> container Render, nên `store.ping()` trong `/readyz`/kết nối Redis lúc khởi
+> động luôn fail.
+>
+> Cách sửa: vào dashboard Render, đối chiếu đúng tên service Redis đã được tạo
+> (`day12-chat-redis`) với tên khai báo trong `render.yaml`, sửa lại `name:`
+> cho khớp (hoặc chọn lại reference `REDIS_URL` thủ công trong tab Environment
+> của service `chat` trỏ đúng tới Redis instance), rồi trigger **Manual Deploy**
+> lại — lần này `/healthz` trả 200 trong vài giây và deploy pass.
